@@ -4,7 +4,7 @@
    Bei Änderungen an den Dateien VERSION erhöhen.
    ═══════════════════════════════════════════════════════ */
 
-const VERSION = 'v1';
+const VERSION = 'v2';
 const CACHE = `vokabeln-${VERSION}`;
 
 const SHELL = [
@@ -47,6 +47,9 @@ self.addEventListener('fetch', event => {
   if (req.method !== 'GET' || new URL(req.url).origin !== self.location.origin) return;
 
   if (req.mode === 'navigate') {
+    // other pages (e.g. ki-test.html) are not part of the app shell
+    const page = new URL(req.url).pathname.split('/').pop();
+    if (page && page !== 'index.html') return;
     event.respondWith(
       caches.match('./index.html').then(hit => hit || fetch(req))
     );
@@ -55,6 +58,8 @@ self.addEventListener('fetch', event => {
 
   event.respondWith(
     caches.match(req).then(hit => {
+      // the AI library is large and only changes with VERSION – no background refresh
+      if (hit && req.url.includes('/js/vendor/')) return hit;
       if (hit) {
         fetch(req).then(res => {
           if (res && res.ok) caches.open(CACHE).then(c => c.put(req, res));

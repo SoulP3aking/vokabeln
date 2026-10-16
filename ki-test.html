@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>KI-Test</title>
+<meta name="color-scheme" content="light">
+<link rel="stylesheet" href="css/style.css">
+<style>
+  main{padding-top:24px}
+  .bar{height:8px;border-radius:4px;background:rgba(120,134,110,.15);overflow:hidden;margin-top:10px}
+  .bar i{display:block;height:100%;width:0;background:var(--green-deep);transition:width .2s}
+  #out{white-space:pre-wrap;min-height:1.5em;font-size:1rem;line-height:1.5;margin:12px 0 0}
+  #log{white-space:pre-wrap;font-size:.78rem;color:var(--ink-soft);margin:0}
+</style>
+</head>
+<body>
+<main>
+  <div class="glass card">
+    <h2>KI-Übersetzer · Test</h2>
+    <p class="hint" id="env"></p>
+    <div class="btn-row">
+      <button class="btn btn-primary" id="btnLoad">KI laden</button>
+      <button class="btn btn-soft" id="btnRemove">KI löschen</button>
+    </div>
+    <div class="bar" hidden id="bar"><i></i></div>
+    <p class="hint" id="state"></p>
+  </div>
+
+  <div class="glass card">
+    <label class="field">
+      <span class="lbl">Text</span>
+      <textarea id="text">Ich gehe morgen mit meinen Freunden ins Kino.</textarea>
+    </label>
+    <div class="two-col">
+      <label class="field">
+        <span class="lbl">nach</span>
+        <select id="to">
+          <option value="en">Englisch</option>
+          <option value="es" selected>Spanisch</option>
+          <option value="fr">Französisch</option>
+          <option value="de">Deutsch</option>
+          <option value="it">Italienisch</option>
+        </select>
+      </label>
+      <label class="field">
+        <span class="lbl">Art</span>
+        <select id="mode">
+          <option value="text">Text</option>
+          <option value="word">Einzelnes Wort</option>
+        </select>
+      </label>
+    </div>
+    <button class="btn btn-primary btn-block" id="btnGo">Übersetzen</button>
+    <p id="out"></p>
+    <p class="hint" id="time"></p>
+  </div>
+
+  <div class="glass card">
+    <h2>Protokoll</h2>
+    <p id="log"></p>
+  </div>
+</main>
+
+<script src="js/ai.js"></script>
+<script>
+  const $ = id => document.getElementById(id);
+  const log = msg => { $('log').textContent += `${new Date().toLocaleTimeString()}  ${msg}\n`; };
+  window.addEventListener('error', e => log('Fehler: ' + e.message));
+  window.addEventListener('unhandledrejection', e => log('Fehler: ' + (e.reason && e.reason.message || e.reason)));
+
+  $('env').textContent = `WebGPU: ${'gpu' in navigator ? 'ja' : 'nein'} · Kerne: ${navigator.hardwareConcurrency || '?'} · ` +
+    `Speicher: ${navigator.deviceMemory ? navigator.deviceMemory + ' GB' : '?'}`;
+
+  async function refreshState() {
+    try {
+      const has = await AI.isDownloaded();
+      $('state').textContent = AI.isReady() ? 'KI ist bereit.'
+        : has ? 'KI liegt auf dem Gerät, ist aber noch nicht gestartet.'
+        : `KI noch nicht geladen (${AI.MODEL_MB} MB, am besten im WLAN).`;
+    } catch (e) {
+      $('state').textContent = 'Bibliothek konnte nicht starten: ' + e.message;
+    }
+  }
+
+  $('btnLoad').onclick = async () => {
+    const t0 = performance.now();
+    $('bar').hidden = false;
+    $('btnLoad').disabled = true;
+    log('Lade KI …');
+    try {
+      await AI.load(p => {
+        $('bar').firstElementChild.style.width = (p * 100).toFixed(1) + '%';
+        $('state').textContent = `Lade … ${(p * 100).toFixed(0)} %`;
+      });
+      log(`KI bereit nach ${((performance.now() - t0) / 1000).toFixed(1)} s`);
+    } catch (e) {
+      log('Laden fehlgeschlagen: ' + (e && e.message || e));
+    }
+    $('btnLoad').disabled = false;
+    refreshState();
+  };
+
+  $('btnRemove').onclick = async () => {
+    try {
+      await AI.remove();
+      log('KI gelöscht.');
+    } catch (e) {
+      log('Löschen fehlgeschlagen: ' + e.message);
+    }
+    refreshState();
+  };
+
+  $('btnGo').onclick = async () => {
+    const text = $('text').value.trim();
+    if (!text) return;
+    $('out').textContent = '…';
+    $('btnGo').disabled = true;
+    const t0 = performance.now();
+    try {
+      const res = $('mode').value === 'word'
+        ? await AI.translateWord(text, $('to').value)
+        : await AI.translate(text, $('to').value);
+      const s = (performance.now() - t0) / 1000;
+      $('out').textContent = res;
+      $('time').textContent = `${s.toFixed(1)} s`;
+      log(`Übersetzt in ${s.toFixed(1)} s: ${res}`);
+    } catch (e) {
+      $('out').textContent = '';
+      log('Übersetzen fehlgeschlagen: ' + (e && e.message || e));
+    }
+    $('btnGo').disabled = false;
+    refreshState();
+  };
+
+  refreshState();
+</script>
+</body>
+</html>
