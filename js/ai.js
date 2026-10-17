@@ -149,9 +149,14 @@ const AI = (() => {
   }
 
   /** Einzelnes Wort – ohne Zufall, damit derselbe Vorschlag kommt. */
-  function translateWord(word, to, signal) {
-    if (!supports(to)) return Promise.reject(new Error('Diese Sprache kann die KI nicht.'));
-    return run(prompt(word, to), 32, 0, signal);
+  async function translateWord(word, to, signal) {
+    if (!supports(to)) throw new Error('Diese Sprache kann die KI nicht.');
+    let out = await run(prompt(word, to), 32, 0, signal);
+    if (!/[.!?]$/.test(word)) out = out.replace(/\.$/, '');
+    // the model writes single words like sentences ("La casa") – vocab is lowercase,
+    // except German nouns and the English "I"
+    if (to === 'de' || (to === 'en' && /^I\b/.test(out))) return out;
+    return out.charAt(0).toLowerCase() + out.slice(1);
   }
 
   return { MODEL_MB, supports, isReady, isLoading, isDownloaded, load, remove, translate, translateWord };

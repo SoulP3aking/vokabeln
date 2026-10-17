@@ -4,7 +4,7 @@
    Bei Änderungen an den Dateien VERSION erhöhen.
    ═══════════════════════════════════════════════════════ */
 
-const VERSION = 'v3';
+const VERSION = 'v4';
 const CACHE = `vokabeln-${VERSION}`;
 // the AI library (~25 MB) gets its own cache so app updates do not re-download it
 const LIB_CACHE = 'vokabeln-wllama-3.8.1';
