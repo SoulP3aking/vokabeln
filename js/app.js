@@ -426,10 +426,207 @@
   let dictRows = [];
 
   /* ═══════════════════════════════════════════════════
+     KI-Übersetzer: Status und Download
+     ═══════════════════════════════════════════════════ */
+  /** phase: none | ondisk | downloading | starting | ready | error */
+  const ai = { phase: 'none', pct: 0, error: '' };
+  // set while the model starts – if it is still set on the next launch, the start crashed
+  const AI_START_KEY = 'vokabeln.aiStarting';
+  let aiStartCrashed = false;
+
+  const aiDownloaded = () => ['ondisk', 'starting', 'ready'].includes(ai.phase);
+  const aiSize = () => `${(AI.MODEL_MB / 1000).toFixed(1).replace('.', ',')} GB`;
+
+  async function aiCheck() {
+    try {
+      ai.phase = AI.isReady() ? 'ready' : (await AI.isDownloaded()) ? 'ondisk' : 'none';
+    } catch (e) {
+      console.warn('KI-Status unbekannt:', e);
+      ai.phase = 'none';
+    }
+    if (ai.phase === 'ondisk' && aiStartCrashed) {
+      ai.phase = 'error';
+      ai.error = 'Sie wurde beim letzten Mal nicht fertig gestartet – App geschlossen oder zu wenig Arbeitsspeicher.';
+    }
+    paintAI();
+  }
+
+  /** KI herunterladen bzw. vom Gerät starten. */
+  async function aiStart() {
+    if (AI.isReady() || AI.isLoading()) return;
+    const fromDisk = ai.phase === 'ondisk';
+    if (!fromDisk && navigator.storage && navigator.storage.estimate) {
+      const est = await navigator.storage.estimate().catch(() => null);
+      if (est && est.quota - est.usage < AI.MODEL_MB * 1.05e6) {
+        toast('Nicht genug freier Speicher für die KI.');
+        return;
+      }
+    }
+    ai.phase = fromDisk ? 'starting' : 'downloading';
+    ai.pct = 0;
+    paintAI();
+
+    // iOS pauses the download when the screen locks
+    const lock = !fromDisk && navigator.wakeLock
+      ? await navigator.wakeLock.request('screen').catch(() => null) : null;
+    try { localStorage.setItem(AI_START_KEY, '1'); } catch (e) {}
+    try {
+      await AI.load(p => { ai.pct = p; paintProgress(); });
+      ai.phase = 'ready';
+      aiStartCrashed = false;
+      if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
+    } catch (e) {
+      console.warn('KI konnte nicht laden:', e);
+      ai.phase = 'error';
+      ai.error = (e && e.message) || String(e);
+    }
+    try { localStorage.removeItem(AI_START_KEY); } catch (e) {}
+    if (lock) lock.release().catch(() => {});
+    paintAI();
+  }
+
+  /** Beim Öffnen von Übersetzen oder Vokabel-Formular schon mal starten. */
+  function aiWarmup() {
+    if (ai.phase === 'ondisk') aiStart();
+  }
+
+  async function aiRemove() {
+    if (!confirm(`Die KI vom Gerät löschen? Das gibt ${aiSize()} frei. Du kannst sie jederzeit wieder herunterladen.`)) return;
+    try {
+      await AI.remove();
+      toast('KI gelöscht');
+    } catch (e) {
+      console.warn('KI löschen fehlgeschlagen:', e);
+      toast('Löschen hat nicht geklappt.');
+    }
+    aiStartCrashed = false;
+    await aiCheck();
+  }
+
+  function aiPanelHTML(where) {
+    const size = aiSize();
+    switch (ai.phase) {
+      case 'downloading':
+        return `<p class="hint">Wird heruntergeladen … <strong data-ai-pct>${Math.floor(ai.pct * 100)} %</strong><br>
+          Lass die App dabei offen.</p>
+          <div class="progress-bar" style="margin-top:10px"><i data-ai-bar style="width:${(ai.pct * 100).toFixed(1)}%"></i></div>`;
+      case 'starting':
+        return `<p class="hint">KI startet …</p>`;
+      case 'ready':
+      case 'ondisk':
+        return where === 'settings'
+          ? `<p class="hint">${ai.phase === 'ready' ? 'Bereit.' : 'Liegt auf dem Gerät.'} Hy-MT2 von Tencent übersetzt direkt auf diesem Gerät, auch ohne Internet. Belegt ${size}.</p>
+             <div class="btn-row"><button class="btn btn-soft" data-ai-remove>KI löschen</button></div>`
+          : '';
+      case 'error':
+        return `<p class="hint">Die KI konnte nicht starten. ${esc(ai.error)}</p>
+          <div class="btn-row"><button class="btn btn-primary" data-ai-retry>Nochmal versuchen</button></div>`;
+      default:
+        return `<p class="hint">Die Übersetzer-KI (Hy-MT2 von Tencent) läuft direkt auf deinem Gerät – ohne Internet, deine Texte bleiben hier. Sie wird einmalig heruntergeladen (${size}), am besten im WLAN.</p>
+          <div class="btn-row"><button class="btn btn-primary" data-ai-download>Herunterladen (${size})</button></div>`;
+    }
+  }
+
+  function paintAI() {
+    const card = aiPanelHTML('translate');
+    $('#aiCard').innerHTML = card ? `<div class="glass card"><h2>KI-Übersetzer</h2>${card}</div>` : '';
+    $('#aiSettings').innerHTML = aiPanelHTML('settings');
+  }
+
+  /** Nur Balken und Prozentzahl erneuern – das passiert sehr oft. */
+  function paintProgress() {
+    $$('[data-ai-bar]').forEach(i => { i.style.width = `${(ai.pct * 100).toFixed(1)}%`; });
+    $$('[data-ai-pct]').forEach(s => { s.textContent = `${Math.floor(ai.pct * 100)} %`; });
+  }
+
+  /* ═══════════════════════════════════════════════════
+     Ansicht: Übersetzen
+     ═══════════════════════════════════════════════════ */
+  const tr = { busy: false, result: null };
+
+  function renderTranslate() {
+    paintAI();
+    const set = Store.settings();
+    const opts = sel => Store.LANGS.filter(l => AI.supports(l.code)).map(l =>
+      `<option value="${l.code}"${l.code === sel ? ' selected' : ''}>${esc(l.name)}</option>`).join('');
+    $('#trFrom').innerHTML = opts(set.trFrom || 'de');
+    $('#trTo').innerHTML = opts(set.trTo || 'es');
+    $('#trChars').innerHTML = charbarHTML($('#trFrom').value, 'trText');
+    renderTrResult();
+    aiWarmup();
+  }
+
+  function renderTrResult() {
+    const btn = $('#btnTranslate');
+    btn.disabled = tr.busy;
+    btn.textContent = tr.busy ? 'Übersetzt …' : 'Übersetzen';
+
+    const r = tr.result;
+    if (!r) { $('#trResult').innerHTML = ''; return; }
+    const L = Store.lang(r.to);
+    // vocab fields hold at most 120 characters
+    const fits = r.text.length <= 120 && r.out.length <= 120;
+    $('#trResult').innerHTML = `
+      <div class="glass card">
+        <div class="row-between">
+          <p class="prompt-lang" style="margin:0">${esc(L.name)}</p>
+          ${speakBtn(r.out, L.tts)}
+        </div>
+        <p class="tr-out">${esc(r.out)}</p>
+        <div class="btn-row">
+          <button class="btn btn-soft" data-tr-copy>Kopieren</button>
+          ${fits ? '<button class="btn btn-soft" data-tr-add>In ein Heft übernehmen</button>' : ''}
+        </div>
+      </div>`;
+  }
+
+  async function doTranslate() {
+    const text = $('#trText').value.trim();
+    if (!text || tr.busy) return;
+    if (ai.phase === 'error') return toast('Die KI läuft gerade nicht – siehe oben.');
+    if (!aiDownloaded()) return toast('Lade zuerst die KI herunter.');
+    const from = $('#trFrom').value, to = $('#trTo').value;
+    if (from === to) return toast('Wähle zwei verschiedene Sprachen.');
+
+    tr.busy = true;
+    renderTrResult();
+    aiWarmup();
+    try {
+      const out = await AI.translate(text, to);
+      tr.result = { text, out, from, to };
+    } catch (e) {
+      console.warn('Übersetzen fehlgeschlagen:', e);
+      toast('Übersetzen hat nicht geklappt.');
+    }
+    tr.busy = false;
+    renderTrResult();
+  }
+
+  function trSwap() {
+    const f = $('#trFrom'), t = $('#trTo');
+    [f.value, t.value] = [t.value, f.value];
+    if (tr.result) {
+      $('#trText').value = tr.result.out;
+      tr.result = null;
+    }
+    Store.setSetting('trFrom', f.value);
+    Store.setSetting('trTo', t.value);
+    renderTranslate();
+  }
+
+  function trCopy() {
+    if (!tr.result) return;
+    navigator.clipboard.writeText(tr.result.out)
+      .then(() => toast('Kopiert'))
+      .catch(() => toast('Kopieren nicht möglich'));
+  }
+
+  /* ═══════════════════════════════════════════════════
      Ansicht: Einstellungen
      ═══════════════════════════════════════════════════ */
   async function renderSettings() {
     $('#appVersion').textContent = Store.APP_VERSION;
+    paintAI();
     $('#ttsEnabled').checked = !!Store.settings().tts;
     $('#dictInfo').textContent =
       `${Dict.size} Einträge in Deutsch, Englisch, Spanisch und Französisch. Sie erscheinen beim Eintippen als Vorschlag und lassen sich unter „Nachschlagen“ durchsuchen. Einzelne Wörter, keine Satzübersetzung.`;
@@ -452,10 +649,10 @@
      ═══════════════════════════════════════════════════ */
   const RENDER = {
     books: renderBooks, book: renderBook, train: renderTrain,
-    dict: renderDict, settings: renderSettings
+    dict: renderDict, translate: renderTranslate, settings: renderSettings
   };
 
-  const TAB_OF = { books: 'books', book: 'books', train: 'train', dict: 'dict', settings: null };
+  const TAB_OF = { books: 'books', book: 'books', train: 'train', dict: 'dict', translate: 'translate', settings: null };
 
   function switchView(name) {
     state.view = name;
@@ -631,6 +828,7 @@
         }
         // Sheet könnte inzwischen wieder geschlossen sein
         setTimeout(() => { const el = $('#wLeft'); if (el) el.focus(); }, 60);
+        aiWarmup();
       });
   }
 
@@ -646,7 +844,26 @@
     }
   }
 
-  /** Wörterbuch-Vorschläge unter dem gerade getippten Feld. */
+  const sugBtn = (which, from, to, isAI = false) =>
+    `<button type="button" class="suggest" data-fill="${which}" data-from="${esc(from)}" data-to="${esc(to)}">
+       <span class="s-from">${esc(from)}</span><span class="s-arr">→</span><span class="s-to">${esc(to)}</span>${
+       isAI ? '<span class="tag tag-ai">KI</span>' : ''}
+     </button>`;
+
+  let sugTimer = null, sugCtrl = null;
+
+  function stopSuggest() {
+    clearTimeout(sugTimer);
+    if (sugCtrl) sugCtrl.abort();
+  }
+
+  function dropSlot(slot) {
+    const list = slot.parentElement;
+    slot.remove();
+    if (list && !list.children.length) list.remove();
+  }
+
+  /** Vorschläge unter dem gerade getippten Feld: Wörterbuch sofort, KI kurz danach. */
   function updateSuggests(which) {
     const body = $('#sheetBody');
     const b = Store.book(body.dataset.bookId);
@@ -655,20 +872,41 @@
     const to = which === 'left' ? b.right.code : b.left.code;
     const box = $(which === 'left' ? '#sugLeft' : '#sugRight');
     const other = $(which === 'left' ? '#wRight' : '#wLeft');
-    const q = $(which === 'left' ? '#wLeft' : '#wRight').value;
+    const q = $(which === 'left' ? '#wLeft' : '#wRight').value.trim();
 
+    stopSuggest();
     if (!box) return;
-    if (!Dict.supports(from) || !Dict.supports(to) || other.value.trim()) {
+    if (other.value.trim()) {
       box.innerHTML = '';
       return;
     }
-    const hits = Dict.lookup(q, from, to, 5);
-    box.innerHTML = hits.length
-      ? `<div class="suggests">${hits.map(h =>
-          `<button type="button" class="suggest" data-fill="${which}" data-from="${esc(h.from)}" data-to="${esc(h.to)}">
-             <span class="s-from">${esc(h.from)}</span><span class="s-arr">→</span><span class="s-to">${esc(h.to)}</span>
-           </button>`).join('')}</div>`
+    const hits = Dict.supports(from) && Dict.supports(to) ? Dict.lookup(q, from, to, 5) : [];
+    const askAI = q.length >= 2 && aiDownloaded() && AI.supports(to);
+    box.innerHTML = hits.length || askAI
+      ? `<div class="suggests">${hits.map(h => sugBtn(which, h.from, h.to)).join('')}${askAI
+          ? `<div class="suggest is-waiting" data-ai-slot>
+               <span class="s-from">${esc(q)}</span><span class="s-arr">→</span><span class="s-to">KI überlegt …</span>
+             </div>` : ''}</div>`
       : '';
+    if (!askAI) return;
+
+    // wait for a typing pause, then ask the AI; a newer keystroke aborts this
+    const ctrl = sugCtrl = new AbortController();
+    sugTimer = setTimeout(() => {
+      AI.translateWord(q, to, ctrl.signal)
+        .then(res => {
+          const slot = !ctrl.signal.aborted && box.querySelector('[data-ai-slot]');
+          if (!slot) return;
+          if (res && !hits.some(h => h.to === res)) slot.outerHTML = sugBtn(which, q, res, true);
+          else dropSlot(slot);
+        })
+        .catch(e => {
+          if (ctrl.signal.aborted) return;
+          console.warn('KI-Vorschlag fehlgeschlagen:', e);
+          const slot = box.querySelector('[data-ai-slot]');
+          if (slot) dropSlot(slot);
+        });
+    }, 450);
   }
 
   async function saveWord(id) {
@@ -839,6 +1077,23 @@
       const dictAdd = e.target.closest('[data-dict-add]');
       if (dictAdd) return dictAddToBook(dictRows[+dictAdd.dataset.dictAdd]);
 
+      /* KI und Übersetzen */
+      if (e.target.closest('[data-ai-download]')) return aiStart();
+      if (e.target.closest('[data-ai-retry]')) {
+        aiStartCrashed = false;
+        await aiCheck();
+        return aiStart();
+      }
+      if (e.target.closest('[data-ai-remove]')) return aiRemove();
+      if (e.target.closest('#btnTranslate')) return doTranslate();
+      if (e.target.closest('#trSwap')) return trSwap();
+      if (e.target.closest('[data-tr-copy]')) return trCopy();
+      if (e.target.closest('[data-tr-add]') && tr.result) {
+        return addToBook({ [tr.result.from]: tr.result.text, [tr.result.to]: tr.result.out });
+      }
+      const ch = e.target.closest('.charbar [data-char]');
+      if (ch) return insertChar($('#' + ch.closest('[data-charbar]').dataset.charbar), ch.dataset.char);
+
       /* Übungsablauf */
       const choice = e.target.closest('[data-choice]');
       if (choice) return submitAnswer(choice.dataset.choice);
@@ -864,6 +1119,10 @@
     $('#main').addEventListener('change', e => {
       if (e.target.id === 'tBook') { state.setup.bookId = e.target.value; renderSetup(); }
       if (e.target.id === 'tLimit') { state.setup.limit = +e.target.value; renderSetup(); }
+      if (e.target.id === 'trFrom' || e.target.id === 'trTo') {
+        Store.setSetting(e.target.id, e.target.value);
+        $('#trChars').innerHTML = charbarHTML($('#trFrom').value, 'trText');
+      }
     });
 
     $('#main').addEventListener('keydown', e => {
@@ -954,6 +1213,7 @@
 
       const fill = e.target.closest('[data-fill]');
       if (fill) {
+        stopSuggest();
         const which = fill.dataset.fill;
         $(which === 'left' ? '#wLeft' : '#wRight').value = fill.dataset.from;
         $(which === 'left' ? '#wRight' : '#wLeft').value = fill.dataset.to;
@@ -1036,11 +1296,16 @@
 
   /** Wörterbuch-Treffer in ein Heft übernehmen. */
   function dictAddToBook(row) {
+    addToBook({ de: row[0], en: row[1], es: row[2], fr: row[3] });
+  }
+
+  /** Wortpaar in ein Heft mit passenden Sprachen übernehmen. byCode: { Sprachcode: Text } */
+  function addToBook(byCode) {
     const books = Store.books();
     if (!books.length) return toast('Lege zuerst ein Heft an.');
 
-    const COL = { de: 0, en: 1, es: 2, fr: 3 };
-    const usable = books.filter(b => b.left.code in COL && b.right.code in COL);
+    const has = code => Object.hasOwn(byCode, code);
+    const usable = books.filter(b => has(b.left.code) && has(b.right.code));
     if (!usable.length) return toast('Kein Heft mit passenden Sprachen.');
 
     openSheet('In welches Heft?', `
@@ -1056,8 +1321,8 @@
         const b = Store.book(p.dataset.pickBook);
         closeSheet();
         setTimeout(() => openWordSheet(b.id, null, {
-          left: row[COL[b.left.code]],
-          right: row[COL[b.right.code]]
+          left: byCode[b.left.code],
+          right: byCode[b.right.code]
         }), 220);
       });
     });
@@ -1071,7 +1336,20 @@
     switchView('books');
     Store.cleanImages().catch(() => {});
 
+    try {
+      aiStartCrashed = !!localStorage.getItem(AI_START_KEY);
+      localStorage.removeItem(AI_START_KEY);
+    } catch (e) {}
+    aiCheck();
+
     if ('serviceWorker' in navigator) {
+      // a new version took over – reload once so it shows right away,
+      // but not in the middle of something
+      const hadController = !!navigator.serviceWorker.controller;
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        if (!hadController || UI.sheetIsOpen() || state.train || AI.isLoading() || tr.busy) return;
+        location.reload();
+      });
       window.addEventListener('load', () => {
         navigator.serviceWorker.register('sw.js').catch(err =>
           console.warn('Service Worker nicht registriert:', err));

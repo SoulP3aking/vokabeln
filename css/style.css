@@ -156,6 +156,7 @@ body{
   transition:transform .16s,background .16s;
 }
 .icon-btn:active{transform:scale(.9)}
+.icon-btn[hidden]{display:none}
 .icon-btn svg{width:19px;height:19px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linejoin:round}
 
 .btn{
@@ -636,6 +637,12 @@ select{
 .dict-row dd{margin:0;font-size:.94rem;overflow-wrap:anywhere}
 .dict-row dd.lead{font-weight:650}
 .dict-row .row-actions{display:flex;gap:8px;margin-top:11px}
+
+/* ── Übersetzen ───────────────────────────────────────── */
+.tr-out{margin:10px 0 0;font-size:1.04rem;line-height:1.55;white-space:pre-wrap;overflow-wrap:anywhere}
+.tag-ai{background:var(--green-mist);color:var(--green-deep);flex:0 0 auto}
+.suggest.is-waiting{cursor:default}
+.suggest.is-waiting .s-to{font-weight:500;color:var(--ink-faint)}
 
 /* ── Training ─────────────────────────────────────────── */
 .train-setup .card{padding:17px 18px}

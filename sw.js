@@ -4,8 +4,10 @@
    Bei Änderungen an den Dateien VERSION erhöhen.
    ═══════════════════════════════════════════════════════ */
 
-const VERSION = 'v2';
+const VERSION = 'v3';
 const CACHE = `vokabeln-${VERSION}`;
+// the AI library (~25 MB) gets its own cache so app updates do not re-download it
+const LIB_CACHE = 'vokabeln-wllama-3.8.1';
 
 const SHELL = [
   './',
@@ -15,6 +17,7 @@ const SHELL = [
   './js/store.js',
   './js/ui.js',
   './js/train.js',
+  './js/ai.js',
   './js/app.js',
   './manifest.webmanifest',
   './icons/icon-192.png',
@@ -26,7 +29,8 @@ const SHELL = [
 self.addEventListener('install', event => {
   event.waitUntil(
     caches.open(CACHE)
-      .then(c => c.addAll(SHELL))
+      // bypass the HTTP cache, otherwise an update can pick up the old files
+      .then(c => c.addAll(SHELL.map(u => new Request(u, { cache: 'reload' }))))
       .then(() => self.skipWaiting())
   );
 });
@@ -35,7 +39,7 @@ self.addEventListener('activate', event => {
   event.waitUntil(
     caches.keys()
       .then(keys => Promise.all(
-        keys.filter(k => k !== CACHE).map(k => caches.delete(k))
+        keys.filter(k => k !== CACHE && k !== LIB_CACHE).map(k => caches.delete(k))
       ))
       .then(() => self.clients.claim())
   );
@@ -56,10 +60,18 @@ self.addEventListener('fetch', event => {
     return;
   }
 
+  if (req.url.includes('/js/vendor/')) {
+    event.respondWith(
+      caches.open(LIB_CACHE).then(c => c.match(req).then(hit => hit || fetch(req).then(res => {
+        if (res && res.ok) c.put(req, res.clone());
+        return res;
+      })))
+    );
+    return;
+  }
+
   event.respondWith(
     caches.match(req).then(hit => {
-      // the AI library is large and only changes with VERSION – no background refresh
-      if (hit && req.url.includes('/js/vendor/')) return hit;
       if (hit) {
         fetch(req).then(res => {
           if (res && res.ok) caches.open(CACHE).then(c => c.put(req, res));

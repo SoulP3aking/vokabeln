@@ -82,6 +82,30 @@
     <div id="dictContent"></div>
   </section>
 
+  <!-- ── ÜBERSETZEN ──────────────────────────────────── -->
+  <section class="view" id="view-translate" data-title="Übersetzen" hidden>
+    <div id="aiCard"></div>
+    <div class="glass card">
+      <div class="lang-swap">
+        <label class="field">
+          <span class="lbl">Von</span>
+          <select id="trFrom"></select>
+        </label>
+        <button type="button" class="swap-btn" id="trSwap" aria-label="Sprachen tauschen">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 8h13l-3-3M17 16H4l3 3"/></svg>
+        </button>
+        <label class="field">
+          <span class="lbl">Nach</span>
+          <select id="trTo"></select>
+        </label>
+      </div>
+      <textarea id="trText" placeholder="Text eingeben …" maxlength="2000" autocomplete="off" style="margin-top:14px"></textarea>
+      <div id="trChars"></div>
+      <button class="btn btn-primary btn-block" id="btnTranslate" style="margin-top:12px">Übersetzen</button>
+    </div>
+    <div id="trResult"></div>
+  </section>
+
   <!-- ── EINSTELLUNGEN ───────────────────────────────── -->
   <section class="view" id="view-settings" data-title="Einstellungen" hidden>
     <div class="glass card">
@@ -105,6 +129,11 @@
         <span>Vorlese-Knopf anzeigen</span>
       </label>
       <p class="hint" id="ttsHint"></p>
+    </div>
+
+    <div class="glass card">
+      <h2>KI-Übersetzer</h2>
+      <div id="aiSettings"></div>
     </div>
 
     <div class="glass card">
@@ -141,6 +170,10 @@
     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4.5 14.3 9l5 .7-3.6 3.5.9 4.9-4.6-2.4-4.6 2.4.9-4.9L4.7 9.7l5-.7L12 4.5Z"/></svg>
     <span>Üben</span>
   </button>
+  <button class="tab" data-view="translate">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.5h9M8.5 3.5v2M6 5.5c.7 3.3 2.7 5.8 5.6 7.2M11 5.5c-.8 3.5-3 6.2-6.5 7.7"/><path d="m12.5 20.5 4-9 4 9M13.8 17.6h5.4"/></svg>
+    <span>Übersetzen</span>
+  </button>
   <button class="tab" data-view="dict">
     <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5" stroke-linecap="round"/></svg>
     <span>Nachschlagen</span>
@@ -165,6 +198,7 @@
 <script src="js/store.js"></script>
 <script src="js/ui.js"></script>
 <script src="js/train.js"></script>
+<script src="js/ai.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>

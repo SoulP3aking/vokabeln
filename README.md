@@ -9,6 +9,9 @@ alle Daten bleiben lokal auf dem Gerät — kein Konto, kein Server, keine Über
 - **Vokabeln** — Wort, Übersetzung, optional ein Kommentar und ein Bild
 - **Wörterbuch** — 593 Wörter in Deutsch, Englisch, Spanisch und Französisch.
   Erscheint beim Eintippen als Vorschlag und ist unter *Nachschlagen* durchsuchbar
+- **Übersetzen** — ganze Texte mit der KI Hy-MT2 von Tencent, direkt auf dem Gerät.
+  Einmal 1,1 GB herunterladen (Einstellungen oder Übersetzen-Tab), danach offline.
+  Die KI macht auch beim Eintippen neuer Vokabeln Vorschläge (markiert mit „KI“)
 - **Üben** — Tippen und Multiple Choice, in beide Richtungen oder gemischt
 - **Kluges Wiederholen** — fünf Leitner-Fächer: richtig beantwortete Vokabeln kommen
   seltener dran (1 → 3 → 7 → 21 Tage), ein Fehler wirft zurück auf Fach 1
@@ -92,6 +95,8 @@ js/dict.js              Wörterbuch (593 Einträge) und die Nachschlage-Logik
 js/store.js             Hefte und Vokabeln in localStorage, Bilder in IndexedDB
 js/ui.js                Sheet, Hinweise, Bildverkleinerung, Aussprache, Sonderzeichen
 js/train.js             Übungsrunden, Leitner-Fächer, Antwortprüfung
+js/ai.js                Übersetzer-KI: Download, Start, Übersetzen
+js/vendor/wllama/       wllama 3.8.1 (MIT) – führt die KI im Browser aus
 js/app.js               Ansichten, Formulare, Ereignisse
 sw.js                   Service Worker für den Offline-Betrieb
 manifest.webmanifest    App-Name, Farben, Icons
